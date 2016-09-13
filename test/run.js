@@ -1,2 +1,1 @@
-#!/usr/bin/env node
-require('urun')(__dirname)
+require('urun')(__dirname);
