@@ -66,9 +66,9 @@ test(function parse() {
     assert.strictEqual(headers, REQ.headers);
   });
 
-  var events = ['error', 'aborted', 'data', 'end'];
-  gently.expect(REQ, 'on', events.length, function(event, fn) {
-    assert.equal(event, events.shift());
+  var EVENTS = ['error', 'aborted', 'data', 'end'];
+  gently.expect(REQ, 'on', EVENTS.length, function(event, fn) {
+    assert.equal(event, EVENTS.shift());
     emit[event] = fn;
     return this;
   });
@@ -149,6 +149,7 @@ test(function parse() {
     gently.expect(form, 'emit',function(event) {
       assert.equal(event, 'aborted');
     });
+    gently.expect(form, '_error');
 
     emit.aborted();
   })();
@@ -195,11 +196,6 @@ test(function parse() {
         REQ = {headers: {}},
         parseCalled = 0;
 
-    gently.expect(form, 'writeHeaders');
-    gently.expect(REQ, 'on', 4, function() {
-      return this;
-    });
-
     gently.expect(form, 'on', 4, function(event, fn) {
       if (event == 'field') {
         fn('field1', 'foo');
@@ -219,15 +215,17 @@ test(function parse() {
       return this;
     });
 
-    form.parse(REQ, gently.expect(function parseCbOk(err, fields, files) {
-      assert.deepEqual(fields, {field1: 'bar', field2: 'nice'});
-      assert.deepEqual(files, {file1: '2', file2: '3'});
-    }));
-
     gently.expect(form, 'writeHeaders');
+
     gently.expect(REQ, 'on', 4, function() {
       return this;
     });
+
+    var parseCbOk = function (err, fields, files) {
+      assert.deepEqual(fields, {field1: 'bar', field2: 'nice'});
+      assert.deepEqual(files, {file1: '2', file2: '3'});
+    };
+    form.parse(REQ, parseCbOk);
 
     var ERR = new Error('test');
     gently.expect(form, 'on', 3, function(event, fn) {
@@ -238,14 +236,37 @@ test(function parse() {
       if (event == 'error') {
         fn(ERR);
         gently.expect(form, 'on');
+        gently.expect(form, 'writeHeaders');
+        gently.expect(REQ, 'on', 4, function() {
+          return this;
+        });
       }
       return this;
     });
 
-    form.parse(REQ, gently.expect(function parseCbErr(err, fields, files) {
+    form.parse(REQ, function parseCbErr(err, fields, files) {
       assert.strictEqual(err, ERR);
       assert.deepEqual(fields, {foo: 'bar'});
-    }));
+    });
+  })();
+
+  (function testWriteOrder() {
+    gently.expect(EventEmitterStub, 'call');
+    var form    = new IncomingForm();
+    var REQ     = new events.EventEmitter();
+    var BUF     = {};
+    var DATACB  = null;
+
+    REQ.on('newListener', function(event, fn) {
+      if ('data' === event) fn(BUF);
+    });
+
+    gently.expect(form, 'writeHeaders');
+    gently.expect(form, 'write', function(buf) {
+      assert.strictEqual(buf, BUF);
+    });
+
+    form.parse(REQ);
   })();
 });
 
@@ -310,7 +331,7 @@ test(function write() {
     delete form._parser;
 
     gently.expect(form, '_error', function(err) {
-      assert.ok(err.message.match(/unintialized parser/i));
+      assert.ok(err.message.match(/uninitialized parser/i));
     });
     form.write(BUFFER);
   })();
@@ -377,9 +398,12 @@ test(function parseContentLength() {
   var HEADERS = {};
 
   form.headers = {};
+  gently.expect(form, 'emit', function(event, bytesReceived, bytesExpected) {
+    assert.equal(event, 'progress');
+    assert.equal(bytesReceived, 0);
+    assert.equal(bytesExpected, 0);
+  });
   form._parseContentLength();
-  assert.strictEqual(form.bytesReceived, null);
-  assert.strictEqual(form.bytesExpected, null);
 
   form.headers['content-length'] = '8';
   gently.expect(form, 'emit', function(event, bytesReceived, bytesExpected) {
@@ -544,7 +568,6 @@ test(function _initUrlencoded() {
 test(function _error() {
   var ERR = new Error('bla');
 
-  gently.expect(form, 'pause');
   gently.expect(form, 'emit', function(event, err) {
     assert.equal(event, 'error');
     assert.strictEqual(err, ERR);

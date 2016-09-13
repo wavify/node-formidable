@@ -22,6 +22,8 @@ a large variety of clients and is considered production-ready.
 
 ## Installation
 
+This is a low level package, and if you're using a high level framework such as Express, chances are it's already included in it. You can [read this discussion](http://stackoverflow.com/questions/11295554/how-to-disable-express-bodyparser-for-file-uploads-node-js) about how Formidable is integrated with Express.
+
 Via [npm](http://github.com/isaacs/npm):
 ```
 npm install formidable@latest
@@ -82,11 +84,10 @@ form.encoding = 'utf-8';
 Sets encoding for incoming form fields.
 
 ```javascript
-form.uploadDir = process.env.TMP || process.env.TMPDIR || process.env.TEMP || '/tmp' || process.cwd();
+form.uploadDir = "/my/dir";
 ```
-The directory for placing file uploads in. You can move them later on using
-`fs.rename()`. The default directory is picked at module load time depending on
-the first existing directory from those listed above.
+Sets the directory for placing file uploads in. You can move them later on using
+`fs.rename()`. The default is `os.tmpDir()`.
 
 ```javascript
 form.keepExtensions = false;
@@ -101,15 +102,25 @@ Either 'multipart' or 'urlencoded' depending on the incoming request.
 ```javascript
 form.maxFieldsSize = 2 * 1024 * 1024;
 ```
-Limits the amount of memory a field (not file) can allocate in bytes.
+Limits the amount of memory all fields together (except files) can allocate in bytes.
 If this value is exceeded, an `'error'` event is emitted. The default
 size is 2MB.
 
+```javascript
+form.maxFields = 1000;
+```
+Limits the number of fields that the querystring parser will decode. Defaults
+to 1000 (0 for unlimited).
 
 ```javascript
 form.hash = false;
 ```
 If you want checksums calculated for incoming files, set this to either `'sha1'` or `'md5'`.
+
+```javascript
+form.multiples = false;
+```
+If this option is enabled, when you call `form.parse`, the `files` argument will contain arrays of files for inputs which submit multiple files using the HTML5 `multiple` attribute.
 
 ```javascript
 form.bytesReceived
@@ -124,7 +135,7 @@ The expected number of bytes in this form.
 ```javascript
 form.parse(request, [cb]);
 ```
-Parses an incoming node.js `request` containing form data. If `cb` is provided, all fields an files are collected and passed to the callback:
+Parses an incoming node.js `request` containing form data. If `cb` is provided, all fields and files are collected and passed to the callback:
 
 
 ```javascript
@@ -193,15 +204,20 @@ If hash calculation was set, you can read the hex digest out of this var.
 
 
 #### 'progress'
+
+Emitted after each incoming chunk of data that has been parsed. Can be used to roll your own progress bar.
+
 ```javascript
 form.on('progress', function(bytesReceived, bytesExpected) {
 });
 ```
-Emitted after each incoming chunk of data that has been parsed. Can be used to roll your own progress bar.
 
 
 
 #### 'field'
+
+Emitted whenever a field / value pair has been received.
+
 ```javascript
 form.on('field', function(name, value) {
 });
@@ -209,7 +225,10 @@ form.on('field', function(name, value) {
 
 #### 'fileBegin'
 
-Emitted whenever a field / value pair has been received.
+Emitted whenever a new file is detected in the upload stream. Use this event if
+you want to stream the file to somewhere else while buffering the upload on
+the file system.
+
 ```javascript
 form.on('fileBegin', function(name, file) {
 });
@@ -217,11 +236,8 @@ form.on('fileBegin', function(name, file) {
 
 #### 'file'
 
-Emitted whenever a new file is detected in the upload stream. Use this even if
-you want to stream the file to somewhere else while buffering the upload on
-the file system.
-
 Emitted whenever a field / file pair has been received. `file` is an instance of `File`.
+
 ```javascript
 form.on('file', function(name, file) {
 });
@@ -230,6 +246,7 @@ form.on('file', function(name, file) {
 #### 'error'
 
 Emitted when there is an error processing the incoming form. A request that experiences an error is automatically paused, you will have to manually call `request.resume()` if you want the request to continue firing `'data'` events.
+
 ```javascript
 form.on('error', function(err) {
 });
@@ -238,7 +255,7 @@ form.on('error', function(err) {
 #### 'aborted'
 
 
-Emitted when the request was aborted by the user. Right now this can be due to a 'timeout' or 'close' event on the socket. In the future there will be a separate 'timeout' event (needs a change in the node core).
+Emitted when the request was aborted by the user. Right now this can be due to a 'timeout' or 'close' event on the socket. After this event is emitted, an `error` event will follow. In the future there will be a separate 'timeout' event (needs a change in the node core).
 ```javascript
 form.on('aborted', function() {
 });
@@ -254,6 +271,53 @@ Emitted when the entire request has been received, and all contained files have 
 
 
 ## Changelog
+
+### v1.0.14
+
+* Add failing hash tests. (Ben Trask)
+* Enable hash calculation again (Eugene Girshov)
+* Test for immediate data events (Tim Smart)
+* Re-arrange IncomingForm#parse (Tim Smart)
+
+### v1.0.13
+
+* Only update hash if update method exists (Sven Lito)
+* According to travis v0.10 needs to go quoted (Sven Lito)
+* Bumping build node versions (Sven Lito)
+* Additional fix for empty requests (Eugene Girshov)
+* Change the default to 1000, to match the new Node behaviour. (OrangeDog)
+* Add ability to control maxKeys in the querystring parser. (OrangeDog)
+* Adjust test case to work with node 0.9.x (Eugene Girshov)
+* Update package.json (Sven Lito)
+* Path adjustment according to eb4468b (Markus Ast)
+
+### v1.0.12
+
+* Emit error on aborted connections (Eugene Girshov)
+* Add support for empty requests (Eugene Girshov)
+* Fix name/filename handling in Content-Disposition (jesperp)
+* Tolerate malformed closing boundary in multipart (Eugene Girshov)
+* Ignore preamble in multipart messages (Eugene Girshov)
+* Add support for application/json (Mike Frey, Carlos Rodriguez)
+* Add support for Base64 encoding (Elmer Bulthuis)
+* Add File#toJSON (TJ Holowaychuk)
+* Remove support for Node.js 0.4 & 0.6 (Andrew Kelley)
+* Documentation improvements (Sven Lito, Andre Azevedo)
+* Add support for application/octet-stream (Ion Lupascu, Chris Scribner)
+* Use os.tmpDir() to get tmp directory (Andrew Kelley)
+* Improve package.json (Andrew Kelley, Sven Lito)
+* Fix benchmark script (Andrew Kelley)
+* Fix scope issue in incoming_forms (Sven Lito)
+* Fix file handle leak on error (OrangeDog)
+
+### v1.0.11
+
+* Calculate checksums for incoming files (sreuter)
+* Add definition parameters to "IncomingForm" as an argument (Math-)
+
+### v1.0.10
+
+* Make parts to be proper Streams (Matt Robenolt)
 
 ### v1.0.9
 
